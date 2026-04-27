@@ -1,0 +1,278 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Lint ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install ruff mypy
+
+      - name: Ruff lint
+        run: ruff check src/ tests/ scripts/
+
+      - name: Ruff format check
+        run: ruff format --check src/ tests/ scripts/
+
+      - name: mypy type check
+        run: mypy src/ --ignore-missing-imports --no-error-summary
+        continue-on-error: true   # Type errors are warnings until full annotation coverage
+
+
+  # ── Unit tests ────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install core dependencies
+        run: |
+          pip install pyyaml python-dotenv
+          # Minimal install — unit tests don't need cloud SDKs
+          pip install -e . --no-deps
+
+      - name: Run unit tests
+        run: python scripts/run_tests.py --fast --verbose
+
+      - name: Run PIIShield standalone
+        run: python tests/test_pii_shield.py
+
+      - name: Run PromptGuard standalone
+        run: python tests/test_prompt_guard.py
+
+
+  # ── Integration tests ─────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB:       ai_rag_platform
+          POSTGRES_USER:     rag_reader
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PG_HOST:     localhost
+      PG_PORT:     5432
+      PG_DATABASE: ai_rag_platform
+      PG_USER:     rag_reader
+      PG_PASSWORD: changeme
+      REDIS_HOST:  localhost
+      REDIS_PORT:  6379
+      # AWS credentials not required — integration tests use demo stubs
+      AWS_REGION:  us-east-1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install pyyaml python-dotenv
+
+      - name: Apply database schema
+        run: |
+          PGPASSWORD=changeme psql \
+            -h localhost -U rag_reader -d ai_rag_platform \
+            -f scripts/setup_pgvector.sql
+        continue-on-error: true   # pgvector extension may not be available in all envs
+
+      - name: Run full test suite
+        run: python scripts/run_tests.py --verbose
+
+      - name: Run e2e pipeline directly
+        run: python tests/test_guardrail_pipeline.py
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+          path: |
+            test-results/
+          if-no-files-found: ignore
+
+
+  # ── Security scan ─────────────────────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit[toml]
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r src/ \
+            --skip B101,B601 \
+            --severity-level medium \
+            --format json \
+            --output bandit-report.json \
+            || true
+
+      - name: Check for high-severity issues
+        run: |
+          python3 -c "
+          import json, sys
+          with open('bandit-report.json') as f:
+              report = json.load(f)
+          high = [r for r in report.get('results', []) if r['issue_severity'] == 'HIGH']
+          if high:
+              print(f'Found {len(high)} HIGH severity issues:')
+              for r in high:
+                  print(f'  {r[\"filename\"]}:{r[\"line_number\"]} — {r[\"issue_text\"]}')
+              sys.exit(1)
+          print('No HIGH severity issues found.')
+          "
+
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-${{ github.sha }}
+          path: bandit-report.json
+
+
+  # ── PII guardrail smoke test ───────────────────────────────────────────────────
+  # Dedicated job: ensures the guardrail pipeline never regresses silently.
+  # This job runs even if other jobs fail — it is the most critical check.
+  guardrail-smoke:
+    name: PII guardrail smoke test (must never fail)
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal deps
+        run: pip install pyyaml python-dotenv
+
+      - name: Smoke test — SSN is always blocked
+        run: |
+          python3 - << 'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          from src.guardrails.pii_shield import (
+              PIIConfig, PIIEntityConfig, PIIEntityType, PIIMode,
+              PIIShield, PIIViolationError,
+          )
+          cfg = PIIConfig(
+              entities=[PIIEntityConfig(PIIEntityType.SSN, PIIMode.BLOCK, 0.70)],
+              audit_all_events=False,
+          )
+          s = PIIShield(config=cfg)
+          try:
+              s.process_chunk("SSN: 123-45-6789", agent_id="smoke", agent_role="any")
+              print("FAIL: SSN was not blocked")
+              sys.exit(1)
+          except PIIViolationError:
+              print("PASS: SSN correctly blocked by PIIShield")
+          EOF
+
+      - name: Smoke test — credit card is always blocked
+        run: |
+          python3 - << 'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          from src.guardrails.pii_shield import (
+              PIIConfig, PIIEntityConfig, PIIEntityType, PIIMode,
+              PIIShield, PIIViolationError,
+          )
+          cfg = PIIConfig(
+              entities=[PIIEntityConfig(PIIEntityType.CREDIT_CARD, PIIMode.BLOCK, 0.75)],
+              audit_all_events=False,
+          )
+          s = PIIShield(config=cfg)
+          try:
+              s.process_chunk("Card 4532-0151-1283-0366", agent_id="smoke", agent_role="any")
+              print("FAIL: Credit card was not blocked")
+              sys.exit(1)
+          except PIIViolationError:
+              print("PASS: Credit card correctly blocked by PIIShield")
+          EOF
+
+      - name: Smoke test — response guard catches SSN leakage
+        run: |
+          python3 - << 'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          from src.guardrails.pii_shield import PIIConfig, PIIEntityConfig, PIIEntityType, PIIMode, PIIShield
+          from src.guardrails.prompt_guard import ResponseGuard, PIILeakageError
+          cfg = PIIConfig(entities=[], global_mode=PIIMode.MASK, audit_all_events=False)
+          rg  = ResponseGuard(PIIShield(config=cfg), block_on_never_patterns=True)
+          try:
+              rg.inspect("The SSN is 999-88-7777", agent_id="smoke", session_id="s")
+              print("FAIL: SSN leakage was not caught by ResponseGuard")
+              sys.exit(1)
+          except PIILeakageError:
+              print("PASS: ResponseGuard correctly caught SSN in LLM response")
+          EOF

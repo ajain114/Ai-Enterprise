@@ -1,0 +1,109 @@
+version: "3.9"
+
+# enterprise-mcp-ai-platform — Local Development Stack
+# ======================================================
+# Starts the infrastructure services required to run the platform locally.
+# No cloud credentials needed for local development and testing.
+#
+# Usage:
+#   docker-compose up -d        # Start all services in background
+#   docker-compose ps           # Check service health
+#   docker-compose down         # Stop and remove containers
+#   docker-compose down -v      # Stop and delete data volumes
+
+services:
+
+  # ── pgvector ──────────────────────────────────────────────────────────────
+  # PostgreSQL 16 with pgvector extension pre-installed.
+  # Used for: vector embeddings store, hybrid search (dense + BM25).
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: mcp_pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ai_rag_platform
+      POSTGRES_USER:     rag_reader
+      POSTGRES_PASSWORD: changeme
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ./scripts/setup_pgvector.sql:/docker-entrypoint-initdb.d/01_setup.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_reader -d ai_rag_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  # Online feature store — serves current feature values with sub-millisecond
+  # latency for LLM agent context assembly.
+  redis:
+    image: redis:7-alpine
+    container_name: mcp_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MinIO ─────────────────────────────────────────────────────────────────
+  # S3-compatible object storage for local development.
+  # Simulates: S3 Iceberg tables, audit logs, model artifacts.
+  # Access UI at: http://localhost:9001 (admin/changeme123)
+  minio:
+    image: minio/minio:latest
+    container_name: mcp_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER:     admin
+      MINIO_ROOT_PASSWORD: changeme123
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Marquez ───────────────────────────────────────────────────────────────
+  # OpenLineage-compatible lineage server.
+  # Captures data lineage from dbt, Airflow, Spark, and our MCP servers.
+  # UI at: http://localhost:3000
+  marquez:
+    image: marquezproject/marquez:latest
+    container_name: mcp_marquez
+    restart: unless-stopped
+    ports:
+      - "5000:5000"   # API
+      - "3000:3000"   # Web UI
+    environment:
+      MARQUEZ_PORT:        5000
+      MARQUEZ_ADMIN_PORT:  5001
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/namespaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  pgvector_data:
+  redis_data:
+  minio_data:
+
+networks:
+  default:
+    name: mcp_platform_network

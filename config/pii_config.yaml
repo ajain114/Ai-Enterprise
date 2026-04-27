@@ -1,0 +1,134 @@
+# config/pii_config.yaml
+# =======================
+# PII protection configuration for the Enterprise MCP AI Platform.
+#
+# Modes:
+#   block — PIIViolationError raised, pipeline aborted immediately.
+#           Use for: SSN, credit cards — entities that must NEVER reach any LLM.
+#
+#   mask  — Replace with [ENTITY_TYPE] placeholder.
+#           Use for: names, addresses, emails — agent can know data was present.
+#
+#   token — Replace with deterministic hash [ENTITY_TYPE:HASH8].
+#           Reversible via token vault for authorized internal systems.
+#           Use for: account numbers, IDs that need cross-referencing.
+#
+# allowed_agent_roles:
+#   Roles listed here are EXEMPT from masking/tokenization for this entity type.
+#   They see the original value in plain text.
+#   Empty list = no agent ever sees plain text (always masked/blocked).
+#
+# score_threshold:
+#   Presidio confidence score minimum (0.0–1.0).
+#   Lower = more sensitive (more false positives).
+#   Higher = more specific (may miss edge cases).
+#   Financial services recommendation: 0.70–0.80 for high-risk entities.
+
+global_mode: "mask"
+block_on_unknown_agent: true
+audit_all_events: true
+token_vault_arn: "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret/pii-token-vault"
+
+entities:
+
+  # ── Hard blocks: these NEVER reach any LLM ────────────────────────────────
+
+  - entity_type: "US_SSN"
+    mode: "block"
+    score_threshold: 0.70          # Lower threshold — prefer false positives for SSNs
+    allowed_agent_roles: []
+    notes: "Social Security Numbers must never enter any LLM context window."
+
+  - entity_type: "CREDIT_CARD"
+    mode: "block"
+    score_threshold: 0.75
+    allowed_agent_roles: []
+    notes: "PCI-DSS scope — credit card numbers in LLM context is a compliance violation."
+
+  - entity_type: "US_DRIVER_LICENSE"
+    mode: "block"
+    score_threshold: 0.75
+    allowed_agent_roles: []
+
+  - entity_type: "US_PASSPORT"
+    mode: "block"
+    score_threshold: 0.75
+    allowed_agent_roles: []
+
+  # ── Token mode: need cross-referencing but not plain text ─────────────────
+
+  - entity_type: "ACCOUNT_NUMBER"
+    mode: "token"
+    score_threshold: 0.85
+    allowed_agent_roles:
+      - "fraud-agent"            # Fraud needs plaintext account context
+      - "platform-admin"
+    notes: >
+      Token format: [ACCOUNT_NUMBER:HASH8]. Deterministic per session.
+      Fraud analysts see plaintext for investigation workflows.
+      All other roles receive tokens that are usable for cross-referencing
+      but carry no exploitable information.
+
+  - entity_type: "US_BANK_NUMBER"
+    mode: "token"
+    score_threshold: 0.80
+    allowed_agent_roles: []
+
+  - entity_type: "US_ROUTING_NUMBER"
+    mode: "token"
+    score_threshold: 0.85
+    allowed_agent_roles: []
+
+  # ── Mask mode: presence known, value hidden ────────────────────────────────
+
+  - entity_type: "PERSON"
+    mode: "mask"
+    score_threshold: 0.80
+    allowed_agent_roles: []
+    notes: >
+      Customer names masked in all agent contexts.
+      Agents reason about situations, not individuals.
+      Also prevents model memorisation of entity identities.
+
+  - entity_type: "EMAIL_ADDRESS"
+    mode: "mask"
+    score_threshold: 0.90
+    allowed_agent_roles:
+      - "collections-agent"      # Needs email for outreach workflows
+      - "servicing-agent"        # Needs email for communication context
+      - "platform-admin"
+    notes: "High threshold — email-like patterns appear legitimately in many contexts."
+
+  - entity_type: "PHONE_NUMBER"
+    mode: "mask"
+    score_threshold: 0.75
+    allowed_agent_roles:
+      - "collections-agent"      # Needs phone for outreach
+      - "platform-admin"
+
+  - entity_type: "LOCATION"
+    mode: "mask"
+    score_threshold: 0.75
+    allowed_agent_roles: []
+    notes: "Full addresses masked. City/State may be in chunk metadata separately."
+
+  - entity_type: "US_ZIP_CODE"
+    mode: "mask"
+    score_threshold: 0.80
+    allowed_agent_roles:
+      - "analytics-agent"        # May need ZIP for geographic aggregations
+
+  - entity_type: "DATE_TIME"
+    mode: "mask"
+    score_threshold: 0.85
+    allowed_agent_roles: []
+    notes: >
+      In production: narrow Presidio recognizer to DATE_OF_BIRTH specifically.
+      Transaction dates, document dates, and policy dates should NOT be masked.
+      Use a custom DATE_OF_BIRTH recognizer that requires date-of-birth context cues.
+
+  - entity_type: "US_NPI"
+    mode: "mask"
+    score_threshold: 0.90
+    allowed_agent_roles: []
+    notes: "Medical provider IDs — relevant for health and wellness product lines."

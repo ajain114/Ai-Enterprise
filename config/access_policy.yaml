@@ -1,0 +1,184 @@
+# config/access_policy.yaml
+# ===========================
+# Agent role → MCP tool permission matrix.
+#
+# Defines which agent roles can invoke which MCP tools,
+# and any additional constraints (e.g. domain restrictions,
+# rate limits, maximum top_k values).
+#
+# This file is loaded by the MCP servers at startup.
+# Changes take effect on next server restart (no hot-reload in v1).
+#
+# In production: store in AWS Systems Manager Parameter Store
+# and reload on a configurable interval.
+#
+# Role hierarchy (most to least privileged):
+#   governance-admin > model-risk > data-steward > fraud-agent
+#   > collections-agent > servicing-agent > analyst > ml-service > public
+
+roles:
+
+  # ── Governance roles (read-only audit + policy) ───────────────────────────
+
+  governance-admin:
+    description: "Full read access to all audit, lineage, and policy data"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - search_entity_history
+      - evaluate_retrieval_quality
+      - get_decision_lineage
+      - query_pii_audit
+      - validate_data_policy
+      - get_quality_metrics
+      - get_entity_context
+      - get_ml_features
+      - get_entity_token
+    max_top_k: 20
+    allowed_domains: all
+
+  model-risk:
+    description: "Model risk and compliance review access"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - get_decision_lineage
+      - query_pii_audit
+      - validate_data_policy
+      - get_quality_metrics
+    max_top_k: 10
+    allowed_domains: all
+
+  data-steward:
+    description: "Data governance and lineage management"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - get_decision_lineage
+      - validate_data_policy
+      - get_quality_metrics
+    max_top_k: 10
+    allowed_domains: all
+
+  compliance-officer:
+    description: "Regulatory compliance and audit access"
+    allowed_tools:
+      - query_pii_audit
+      - get_decision_lineage
+      - validate_data_policy
+      - get_quality_metrics
+    max_top_k: 10
+    allowed_domains: all
+
+  # ── Agent roles (active AI agents) ───────────────────────────────────────
+
+  fraud-agent:
+    description: "Fraud detection and investigation agent"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - search_entity_history
+      - evaluate_retrieval_quality
+      - get_entity_context
+      - get_entity_token
+    max_top_k: 10
+    allowed_domains:
+      - fraud
+      - risk
+      - servicing
+    pii_overrides:
+      ACCOUNT_NUMBER: plaintext      # Fraud agents see account numbers unmasked
+    rate_limit_per_minute: 60
+
+  collections-agent:
+    description: "Collections outreach and decision agent"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - search_entity_history
+      - evaluate_retrieval_quality
+      - get_entity_context
+      - get_entity_token
+    max_top_k: 8
+    allowed_domains:
+      - collections
+      - servicing
+      - risk
+    pii_overrides:
+      EMAIL_ADDRESS: plaintext       # Collections agents see email for outreach
+      PHONE_NUMBER:  plaintext       # Collections agents see phone for outreach
+    rate_limit_per_minute: 120
+
+  servicing-agent:
+    description: "Customer servicing and support agent"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - search_entity_history
+      - evaluate_retrieval_quality
+      - get_entity_context
+      - get_entity_token
+    max_top_k: 8
+    allowed_domains:
+      - servicing
+      - collections
+    pii_overrides:
+      EMAIL_ADDRESS: plaintext       # Servicing agents see email for correspondence
+    rate_limit_per_minute: 180
+
+  analyst:
+    description: "Analytics and insights analyst"
+    allowed_tools:
+      - search_knowledge_base
+      - get_document_context
+      - evaluate_retrieval_quality
+      - get_entity_context
+      - get_entity_token
+      - get_ml_features
+    max_top_k: 15
+    allowed_domains:
+      - servicing
+      - risk
+    pii_overrides: {}               # Analysts see no PII in plaintext
+    rate_limit_per_minute: 60
+
+  # ── Service roles (non-human callers) ────────────────────────────────────
+
+  ml-service:
+    description: "ML model scoring and training service"
+    allowed_tools:
+      - get_ml_features
+      - get_entity_token
+      - evaluate_retrieval_quality
+    max_top_k: 5
+    allowed_domains: all
+    pii_overrides: {}
+    rate_limit_per_minute: 600      # High limit for batch scoring
+
+  # ── Default / unknown ─────────────────────────────────────────────────────
+
+  public:
+    description: "Unauthenticated or unknown role — minimal access"
+    allowed_tools:
+      - search_knowledge_base        # Read-only knowledge base search only
+      - validate_data_policy
+    max_top_k: 3
+    allowed_domains:
+      - public
+    pii_overrides: {}
+    rate_limit_per_minute: 10
+    notes: "If a role is not listed above, it defaults to public permissions."
+
+# ── Global constraints ────────────────────────────────────────────────────────
+global:
+  absolute_block_entities:           # No role can override these — ever
+    - US_SSN
+    - CREDIT_CARD
+    - US_DRIVER_LICENSE
+    - US_PASSPORT
+
+  max_chunk_size_tokens: 512
+  min_retrieval_score: 0.40          # Chunks below this threshold are never returned
+
+  audit_all_calls: true
+  require_session_id: true           # All tool calls must carry a session_id

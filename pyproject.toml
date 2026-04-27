@@ -1,0 +1,117 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+# ── Project metadata ──────────────────────────────────────────────────────────
+[project]
+name        = "enterprise-mcp-ai-platform"
+version     = "1.0.0"
+description = "MCP server infrastructure for enterprise RAG, agentic AI, and modular data pipelines with built-in PII guardrails."
+readme      = "README.md"
+requires-python = ">=3.11"
+license     = {text = "MIT"}
+
+[project.urls]
+Repository  = "https://github.com/your-org/enterprise-mcp-ai-platform"
+Issues      = "https://github.com/your-org/enterprise-mcp-ai-platform/issues"
+
+[project.scripts]
+mcp-rag-server      = "src.servers.rag_server:run"
+mcp-feature-server  = "src.servers.feature_store_server:run"
+run-tests           = "scripts.run_tests:main"
+
+# ── Ruff (linting + formatting) ───────────────────────────────────────────────
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+src            = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "S",    # bandit (security)
+    "T20",  # flake8-print (no print statements in library code)
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "S101",  # assert — allowed in tests
+    "S105",  # hardcoded passwords — false positives on config keys
+    "S106",
+    "S311",  # random — we use it for demo scoring only
+    "T201",  # print — allowed in scripts/
+    "B008",  # function call in default argument
+    "N806",  # variable in function should be lowercase (conflicts with type aliases)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*"   = ["S", "T20"]   # security and print checks relaxed in tests
+"scripts/*" = ["T20"]         # print allowed in scripts
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.format]
+quote-style             = "double"
+indent-style            = "space"
+skip-magic-trailing-comma = false
+
+# ── mypy ─────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version         = "3.11"
+strict                 = false
+ignore_missing_imports = true
+warn_return_any        = true
+warn_unused_configs    = true
+no_implicit_optional   = true
+check_untyped_defs     = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+ignore_errors = true
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths       = ["tests"]
+python_files    = ["test_*.py"]
+python_classes  = ["Test*"]
+python_functions= ["test_*"]
+asyncio_mode    = "auto"
+markers = [
+    "unit: fast unit tests, no external dependencies",
+    "integration: tests that exercise server components",
+    "e2e: full end-to-end pipeline tests",
+    "guardrail: PII guardrail correctness — must never skip",
+]
+log_cli         = false
+log_level       = "WARNING"
+
+# ── coverage ──────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source  = ["src"]
+omit    = ["*/tests/*", "*/scripts/*", "*/__init__.py"]
+
+[tool.coverage.report]
+show_missing   = true
+skip_covered   = false
+fail_under     = 70        # minimum 70% coverage required
+exclude_lines  = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "# PRODUCTION:",
+    "# In production:",
+]
+
+# ── bandit (security linting) ─────────────────────────────────────────────────
+[tool.bandit]
+targets    = ["src"]
+skips      = ["B101", "B601"]   # assert, shell — acceptable in our context
+severity   = "medium"
+confidence = "medium"

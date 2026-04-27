@@ -1,0 +1,50 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2869
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 enterprise-mcp-ai-platform/\
+\uc0\u9500 \u9472 \u9472  README.md                        \u8592  Problem + solution + quickstart\
+\uc0\u9500 \u9472 \u9472  LICENSE / SECURITY.md / CONTRIBUTING.md\
+\uc0\u9500 \u9472 \u9472  pyproject.toml                   \u8592  ruff, mypy, pytest, coverage config\
+\uc0\u9500 \u9472 \u9472  Makefile / setup.py / conftest.py\
+\uc0\u9500 \u9472 \u9472  requirements.txt / requirements-dev.txt\
+\uc0\u9500 \u9472 \u9472  .env.example / .gitignore\
+\uc0\u9500 \u9472 \u9472  docker-compose.yml               \u8592  pgvector + Redis + MinIO + Marquez\
+\uc0\u9474 \
+\uc0\u9500 \u9472 \u9472  src/\
+\uc0\u9474    \u9500 \u9472 \u9472  guardrails/\
+\uc0\u9474    \u9474    \u9500 \u9472 \u9472  pii_shield.py            \u8592  BLOCK / MASK / TOKEN engine\
+\uc0\u9474    \u9474    \u9500 \u9472 \u9472  prompt_guard.py          \u8592  Pre + post LLM inspection\
+\uc0\u9474    \u9474    \u9492 \u9472 \u9472  audit_logger.py\
+\uc0\u9474    \u9500 \u9472 \u9472  servers/\
+\uc0\u9474    \u9474    \u9500 \u9472 \u9472  rag_server.py            \u8592  4 MCP tools, 7-layer pipeline\
+\uc0\u9474    \u9474    \u9500 \u9472 \u9472  feature_store_server.py  \u8592  3 MCP tools, ML+LLM duality\
+\uc0\u9474    \u9474    \u9492 \u9472 \u9472  governance_server.py\
+\uc0\u9474    \u9492 \u9472 \u9472  utils/\
+\uc0\u9474        \u9500 \u9472 \u9472  config.py / embedding_client.py / openlineage_client.py\
+\uc0\u9474 \
+\uc0\u9500 \u9472 \u9472  config/\
+\uc0\u9474    \u9500 \u9472 \u9472  pii_config.yaml              \u8592  PII rules (edit without code changes)\
+\uc0\u9474    \u9492 \u9472 \u9472  access_policy.yaml\
+\uc0\u9474 \
+\uc0\u9500 \u9472 \u9472  tests/                           \u8592  5 suites, 214 tests, no pytest needed\
+\uc0\u9474    \u9500 \u9472 \u9472  test_pii_shield.py\
+\uc0\u9474    \u9500 \u9472 \u9472  test_prompt_guard.py\
+\uc0\u9474    \u9500 \u9472 \u9472  test_rag_server.py\
+\uc0\u9474    \u9500 \u9472 \u9472  test_feature_store.py\
+\uc0\u9474    \u9492 \u9472 \u9472  test_guardrail_pipeline.py\
+\uc0\u9474 \
+\uc0\u9500 \u9472 \u9472  scripts/\
+\uc0\u9474    \u9500 \u9472 \u9472  run_tests.py                 \u8592  Master runner (python scripts/run_tests.py)\
+\uc0\u9474    \u9500 \u9472 \u9472  seed_demo_data.py\
+\uc0\u9474    \u9492 \u9472 \u9472  setup_pgvector.sql\
+\uc0\u9474 \
+\uc0\u9500 \u9472 \u9472  docs/\
+\uc0\u9474    \u9500 \u9472 \u9472  architecture.md\
+\uc0\u9474    \u9500 \u9472 \u9472  pii_modes.md                 \u8592  When to use BLOCK vs MASK vs TOKEN\
+\uc0\u9474    \u9492 \u9472 \u9472  production_checklist.md      \u8592  Full pre-production checklist\
+\uc0\u9474 \
+\uc0\u9492 \u9472 \u9472  .github/workflows/ci.yml         \u8592  GitHub Actions (lint + unit + integration + security)}
