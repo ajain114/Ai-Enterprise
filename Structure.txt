@@ -1,0 +1,43 @@
+enterprise-mcp-ai-platform/
+├── README.md                        ← Problem + solution + quickstart
+├── LICENSE / SECURITY.md / CONTRIBUTING.md
+├── pyproject.toml                   ← ruff, mypy, pytest, coverage config
+├── Makefile / setup.py / conftest.py
+├── requirements.txt / requirements-dev.txt
+├── .env.example / .gitignore
+├── docker-compose.yml               ← pgvector + Redis + MinIO + Marquez
+│ˇ
+├── src/ˇˇˇ
+│   ├── guardrails/
+│   │   ├── pii_shield.py            ← BLOCK / MASK / TOKEN engine
+│   │   ├── prompt_guard.py          ← Pre + post LLM inspection
+│   │   └── audit_logger.py
+│   ├── servers/ˇ
+│   │   ├── rag_server.py            ← 4 MCP tools, 7-layer pipeline
+│   │   ├── feature_store_server.py  ← 3 MCP tools, ML+LLM duality
+│   │   └── governance_server.py
+│   └── utils/
+│       ├── config.py / embedding_client.py / openlineage_client.py
+│
+├── config/
+│   ├── pii_config.yaml              ← PII rules (edit without code changes)
+│   └── access_policy.yaml
+│
+├── tests/                           ← 5 suites, 214 tests, no pytest needed
+│   ├── test_pii_shield.py
+│   ├── test_prompt_guard.py
+│   ├── test_rag_server.py
+│   ├── test_feature_store.py
+│   └── test_guardrail_pipeline.py
+│
+├── scripts/
+│   ├── run_tests.py                 ← Master runner (python scripts/run_tests.py)
+│   ├── seed_demo_data.py
+│   └── setup_pgvector.sql
+│
+├── docs/
+│   ├── architecture.md
+│   ├── pii_modes.md                 ← When to use BLOCK vs MASK vs TOKEN
+│   └── production_checklist.md      ← Full pre-production checklist
+│
+└── .github/workflows/ci.yml         ← GitHub Actions (lint + unit + integration + security)
